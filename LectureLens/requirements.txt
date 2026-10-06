@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+python-multipart
+email-validator
+# optional, enables real speech-to-text:
+# faster-whisper

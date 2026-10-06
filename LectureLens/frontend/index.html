@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LectureLens</title>
+<style>
+:root{--bg:#f4f7f6;--card:#fff;--ink:#17302b;--mute:#5d726d;--brand:#0f766e;--brand2:#e6f4f1;--line:#d9e4e1;--warn:#b45309;--bad:#b91c1c}
+*{box-sizing:border-box}body{margin:0;font:15px/1.55 Georgia,'Times New Roman',serif;background:var(--bg);color:var(--ink)}
+button,input,select,textarea{font:inherit}h1,h2,h3,.ui{font-family:system-ui,sans-serif}
+.app{display:grid;grid-template-columns:220px 1fr;min-height:100vh}
+nav{background:#0d3b36;color:#cfe8e3;padding:20px 12px;font-family:system-ui,sans-serif}
+nav h1{font-size:18px;color:#fff;margin:0 8px 20px}nav a{display:block;padding:9px 12px;border-radius:6px;color:inherit;text-decoration:none;cursor:pointer}
+nav a.on,nav a:hover{background:#14544c;color:#fff}main{padding:24px;max-width:1000px;width:100%}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}.stat b{display:block;font:600 26px system-ui}.stat span{color:var(--mute);font-size:13px}
+button{background:var(--brand);color:#fff;border:0;padding:8px 14px;border-radius:6px;cursor:pointer}button.alt{background:var(--brand2);color:var(--brand)}button.del{background:#fde8e8;color:var(--bad)}
+button:focus-visible,input:focus-visible,a:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid #f59e0b;outline-offset:2px}
+input,select,textarea{border:1px solid var(--line);border-radius:6px;padding:8px;width:100%;margin:4px 0 10px;background:#fff}
+table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:8px;border-bottom:1px solid var(--line)}
+.tag{display:inline-block;background:var(--brand2);color:var(--brand);padding:2px 10px;border-radius:99px;margin:2px;font:13px system-ui}
+.tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px}.tabs button{background:#fff;color:var(--ink);border:1px solid var(--line)}.tabs button.on{background:var(--brand);color:#fff}
+.bar{height:10px;background:var(--brand2);border-radius:5px;overflow:hidden}.bar i{display:block;height:100%;background:var(--brand)}
+.badge{font:12px system-ui;padding:2px 8px;border-radius:4px;background:var(--brand2)}.demo{background:#fef3c7;color:var(--warn)}
+.flash{min-height:140px;display:grid;place-items:center;text-align:center;font-size:18px;cursor:pointer;padding:20px}
+.seg{padding:4px 0;cursor:pointer}.seg:hover{background:var(--brand2)}mark{background:#fde68a}
+#toast{position:fixed;right:16px;bottom:16px;display:grid;gap:8px;z-index:9}#toast div{background:#17302b;color:#fff;padding:10px 14px;border-radius:6px;font-family:system-ui}#toast .err{background:var(--bad)}
+.auth{max-width:380px;margin:8vh auto}.empty{color:var(--mute);text-align:center;padding:30px}
+@media(max-width:720px){.app{grid-template-columns:1fr}nav{display:flex;overflow:auto;padding:8px}nav h1{display:none}nav a{white-space:nowrap}}
+@media(prefers-reduced-motion:no-preference){.bar i{transition:width .4s}}
+</style></head><body>
+<div id="toast" role="status" aria-live="polite"></div><div id="root"></div>
+<script>
+const $=s=>document.querySelector(s),root=$('#root');let S={token:localStorage.ll_token,name:localStorage.ll_name,page:'dashboard',lec:[],cur:null,tab:'Overview',fc:0,rec:null};
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const mmss=t=>{t=Math.round(t||0);return String(t/60|0).padStart(2,'0')+':'+String(t%60).padStart(2,'0')};
+function toast(m,err){const d=document.createElement('div');d.textContent=m;if(err)d.className='err';$('#toast').append(d);setTimeout(()=>d.remove(),4000)}
+async function api(p,o={}){o.headers={...(o.headers||{}),Authorization:'Bearer '+S.token};if(o.json){o.headers['Content-Type']='application/json';o.body=JSON.stringify(o.json);delete o.json}
+ const r=await fetch('/api'+p,o);let d={};try{d=await r.json()}catch{}if(r.status==401&&S.token){logoutLocal();}if(!r.ok)throw new Error(typeof d.detail=='string'?d.detail:'Something went wrong. Please try again.');return d}
+function logoutLocal(){localStorage.clear();S.token=null;render()}
+function download(name,text){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'text/plain'}));a.download=name;a.click()}
+
+function authView(reg){root.innerHTML=`<form class="card auth" id="f"><h1>LectureLens</h1><p>Lecture speech analysis &amp; study assistant</p>
+ ${reg?'<label>Name<input name="name" required></label>':''}<label>Email<input name="email" type="email" required></label>
+ <label>Password<input name="password" type="password" minlength="8" required></label><button>${reg?'Create account':'Log in'}</button>
+ <p><a href="#" id="sw">${reg?'I already have an account':'Create an account'}</a> · <a href="#" id="fp">Forgot password?</a></p></form>`;
+ $('#sw').onclick=e=>{e.preventDefault();authView(!reg)};$('#fp').onclick=e=>{e.preventDefault();toast('Password reset is not available in this demo. Register a new account instead.')};
+ $('#f').onsubmit=async e=>{e.preventDefault();const b=Object.fromEntries(new FormData(e.target));try{
+  if(reg){await api('/auth/register',{method:'POST',json:b});toast('Account created. Log in to continue.');return authView(false)}
+  const d=await api('/auth/login',{method:'POST',json:b});localStorage.ll_token=S.token=d.token;localStorage.ll_name=S.name=d.name;render()}catch(x){toast(x.message,1)}}}
+
+async function render(){if(!S.token)return authView(false);try{S.lec=await api('/lectures')}catch{return}
+ const P=['dashboard','upload','record','lectures'];
+ root.innerHTML=`<div class="app"><nav aria-label="Main"><h1>LectureLens</h1>${P.map(p=>`<a tabindex=0 data-p="${p}" class="${S.page==p?'on':''}">${p[0].toUpperCase()+p.slice(1)}</a>`).join('')}<a tabindex=0 id="lo">Log out</a></nav><main id="m"></main></div>`;
+ document.querySelectorAll('nav a[data-p]').forEach(a=>{a.onclick=()=>{S.page=a.dataset.p;S.cur=null;render()};a.onkeydown=e=>e.key=='Enter'&&a.click()});
+ $('#lo').onclick=async()=>{await api('/auth/logout',{method:'POST'}).catch(()=>{});logoutLocal()};
+ const m=$('#m');if(S.cur)return lectureView(m);({dashboard,upload,record,lectures})[S.page](m)}
+
+const open_=id=>{S.cur=id;S.tab='Overview';S.fc=0;render()};window.open_=open_;
+function dashboard(m){const L=S.lec,hrs=(L.reduce((a,l)=>a+l.duration,0)/3600).toFixed(1);
+ m.innerHTML=`<h2>Welcome back, ${esc(S.name)}!</h2><p>Continue learning with your lecture insights.</p>
+ <div class="grid"><div class="card stat"><b>${L.length}</b><span>Total lectures</span></div><div class="card stat"><b>${hrs}</b><span>Study hours</span></div><div class="card stat"><b>${L.filter(l=>l.status=='Completed').length}</b><span>Completed</span></div></div>
+ <div class="card"><h3>Quick actions</h3><button onclick="S.page='upload';render()">Upload lecture</button> <button class="alt" onclick="S.page='record';render()">Record lecture</button></div>
+ <div class="card"><h3>Recent lectures</h3>${L.length?table(L.slice(0,5)):'<div class="empty">No lectures yet. Upload or record one to get started.</div>'}</div>`}
+const table=L=>`<table><tr><th>Title</th><th>Subject</th><th>Duration</th><th>Status</th></tr>${L.map(l=>`<tr><td><a href="#" onclick="open_(${l.id});return false">${esc(l.title)}</a> ${l.mode=='demo'?'<span class="badge demo">demo</span>':''}</td><td>${esc(l.subject)}</td><td>${mmss(l.duration)}</td><td>${esc(l.status)}</td></tr>`).join('')}</table>`;
+
+function lectures(m){m.innerHTML=`<h2>Lecture history</h2><div class="card"><input id="q" placeholder="Filter by title or subject" aria-label="Filter"><div id="t"></div></div>`;
+ const draw=()=>{const q=$('#q').value.toLowerCase(),L=S.lec.filter(l=>(l.title+l.subject).toLowerCase().includes(q));$('#t').innerHTML=L.length?table(L):'<div class="empty">No matching lectures.</div>'};$('#q').oninput=draw;draw()}
+
+function upload(m,blob){m.innerHTML=`<h2>Upload lecture</h2><form class="card" id="f"><label>Title<input name="title"></label><label>Subject<input name="subject" value="General"></label>
+ <label>Audio file (MP3, WAV, M4A, WEBM)<input type="file" name="file" accept=".mp3,.wav,.m4a,.webm,audio/*" required></label><div id="info" class="ui"></div>
+ <div class="bar" hidden id="pb"><i style="width:0"></i></div><p id="st" class="ui"></p><button>Process lecture</button></form>`;
+ const f=$('#f');f.file.onchange=()=>{const x=f.file.files[0];if(!x)return;const a=new Audio(URL.createObjectURL(x));a.onloadedmetadata=()=>{f.dataset.dur=a.duration;$('#info').textContent=`${x.name} · ${(x.size/1048576).toFixed(1)} MB · ${mmss(a.duration)}`}};
+ if(blob){const dt=new DataTransfer();dt.items.add(new File([blob],'recording.webm'));f.file.files=dt.files;$('#info').textContent='Recorded lecture ready to process.'}
+ f.onsubmit=async e=>{e.preventDefault();const fd=new FormData(f);fd.set('duration',f.dataset.dur||0);const steps=['Uploaded','Audio processing','Transcribing','Analyzing','Generating study materials'];let i=0;$('#pb').hidden=false;
+  const tick=setInterval(()=>{i=Math.min(i+1,4);$('#st').textContent=steps[i];$('#pb i').style.width=(i+1)*18+'%'},1500);$('#st').textContent=steps[0];
+  try{const d=await api('/lectures/upload',{method:'POST',body:fd});clearInterval(tick);$('#pb i').style.width='100%';toast(d.mode=='demo'?'Completed using the demo transcript (install faster-whisper for real transcription).':'Lecture processed.');open_(d.id)}
+  catch(x){clearInterval(tick);$('#st').textContent='';toast(x.message,1)}}}
+
+function record(m){m.innerHTML=`<h2>Record lecture</h2><div class="card"><p class="ui">Microphone: <b id="perm">not requested</b></p><h3 id="tm" class="ui">00:00</h3>
+ <button id="s">Start</button> <button id="p" class="alt" disabled>Pause</button> <button id="x" class="alt" disabled>Stop</button><div style="margin:12px 0"><audio id="au" controls hidden></audio></div>
+ <button id="sv" hidden>Save &amp; process</button> <button id="dl" class="del" hidden>Delete recording</button></div>`;
+ let mr,ch=[],t0=0,acc=0,iv,blob;const upd=()=>$('#tm').textContent=mmss(acc+(mr&&mr.state=='recording'?(Date.now()-t0)/1000:0));
+ $('#s').onclick=async()=>{try{const st=await navigator.mediaDevices.getUserMedia({audio:true});$('#perm').textContent='granted';mr=new MediaRecorder(st);ch=[];acc=0;
+  mr.ondataavailable=e=>ch.push(e.data);mr.onstop=()=>{st.getTracks().forEach(t=>t.stop());clearInterval(iv);blob=new Blob(ch,{type:'audio/webm'});$('#au').src=URL.createObjectURL(blob);$('#au').hidden=$('#sv').hidden=$('#dl').hidden=false};
+  mr.start();t0=Date.now();iv=setInterval(upd,500);$('#s').disabled=true;$('#p').disabled=$('#x').disabled=false}catch{$('#perm').textContent='denied';toast('Microphone access was blocked. Allow it in your browser settings and try again.',1)}};
+ $('#p').onclick=()=>{if(mr.state=='recording'){acc+=(Date.now()-t0)/1000;mr.pause();$('#p').textContent='Resume'}else{mr.resume();t0=Date.now();$('#p').textContent='Pause'}};
+ $('#x').onclick=()=>{if(mr.state=='recording')acc+=(Date.now()-t0)/1000;mr.stop();$('#p').disabled=$('#x').disabled=true;$('#s').disabled=false};
+ $('#dl').onclick=()=>{blob=null;record(m)};$('#sv').onclick=()=>upload(m,blob)}
+
+async function lectureView(m){let d;try{d=await api('/lectures/'+S.cur)}catch(x){toast(x.message,1);S.cur=null;return render()}
+ const T=['Overview','Transcript','Key points','Notes','Questions','Flashcards','Analytics'],l=d.lecture,a=d.analysis||{};
+ m.innerHTML=`<p><a href="#" id="bk">← Back</a></p><h2>${esc(l.title)} ${l.mode=='demo'?'<span class="badge demo">demo transcript</span>':''}</h2><p class="ui">${esc(l.subject)} · ${mmss(l.duration)} · ${esc(l.status)}</p>
+ <div class="tabs" role="tablist">${T.map(t=>`<button role="tab" class="${S.tab==t?'on':''}" data-t="${t}">${t}</button>`).join('')}</div><div id="tb"></div>
+ <div class="card"><button class="alt" id="ex">Export all (TXT)</button> <button class="del" id="rm">Delete lecture</button></div>`;
+ $('#bk').onclick=e=>{e.preventDefault();S.cur=null;render()};document.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{S.tab=b.dataset.t;lectureView(m)});
+ $('#rm').onclick=async()=>{if(confirm('Delete this lecture and its study materials?')){await api('/lectures/'+S.cur,{method:'DELETE'});S.cur=null;toast('Lecture deleted.');render()}};
+ $('#ex').onclick=()=>download(l.title+'.txt',`TRANSCRIPT\n${d.transcript?.text}\n\nSUMMARY\n${a.medium}\n\nNOTES\n${d.notes}\n\nQUESTIONS\n${d.questions.map(q=>'Q: '+q.question+'\nA: '+q.answer).join('\n\n')}\n\nFLASHCARDS\n${d.flashcards.map(c=>c.front+' -> '+c.back).join('\n')}`);
+ const tb=$('#tb'),tag=(w)=>`<span class="tag">${esc(w)}</span>`,list=x=>`<ul>${x.map(i=>`<li>${esc(i)}</li>`).join('')}</ul>`;
+ const V={Overview:()=>`<div class="card"><h3>Short summary</h3><p>${esc(a.short)}</p><h3>Medium summary</h3><p>${esc(a.medium)}</p><details><summary>Detailed summary</summary><p>${esc(a.detailed)}</p></details></div><div class="card"><h3>Main topics</h3>${d.topics.map(t=>tag(t.topic_name)).join('')}</div>`,
+ Transcript:()=>{setTimeout(()=>{const draw=q=>$('#segs').innerHTML=(d.transcript?.segments||[]).filter(s=>s[1].toLowerCase().includes(q.toLowerCase())).map(s=>`<div class="seg"><b class="ui">${mmss(s[0])}</b> – ${esc(s[1]).replace(new RegExp(q?q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'):'$^','gi'),x=>`<mark>${x}</mark>`)}${s[2]?` <small>(${Math.round(s[2]*100)}% conf.)</small>`:''}</div>`).join('')||'<div class="empty">No matches.</div>';
+  draw('');$('#sq').oninput=e=>draw(e.target.value);$('#cp').onclick=()=>navigator.clipboard.writeText(d.transcript.text).then(()=>toast('Transcript copied.'));$('#dt').onclick=()=>download(l.title+'-transcript.txt',d.transcript.text);
+  $('#sv').onclick=async()=>{await api('/lectures/'+S.cur,{method:'PUT',json:{transcript:$('#ed').value}});toast('Transcript saved and re-analyzed.');lectureView(m)}});
+  return `<div class="card"><p class="ui">Language: ${esc(d.transcript?.language)}</p><input id="sq" placeholder="Search in transcript" aria-label="Search transcript"><button class="alt" id="cp">Copy</button> <button class="alt" id="dt">Download</button><div id="segs"></div></div><div class="card"><h3>Edit transcript</h3><textarea id="ed" rows="8">${esc(d.transcript?.text)}</textarea><button id="sv">Save &amp; re-analyze</button></div>`},
+ 'Key points':()=>`<div class="card"><h3>Important sentences</h3>${list(a.key_points||[])}</div><div class="card"><h3>Keywords</h3>${(a.keywords||[]).map(k=>tag(k[0])).join('')}</div><div class="card"><h3>Definitions</h3>${(a.definitions||[]).map(x=>`<p><b>${esc(x[0])}</b>: ${esc(x[1])}</p>`).join('')||'<div class="empty">No definition-style sentences found.</div>'}</div>`,
+ Notes:()=>`<div class="card"><pre style="white-space:pre-wrap;font:inherit">${esc(d.notes)||'No notes generated.'}</pre></div>`,
+ Questions:()=>d.questions.map(q=>`<div class="card"><b>${esc(q.question)}</b>${q.options?`<ol type="A">${q.options.map(o=>`<li>${esc(o)}</li>`).join('')}</ol>`:''}<details><summary>Show answer</summary><p>${esc(q.answer)}</p>${q.explanation?`<small>${esc(q.explanation)}</small>`:''}</details></div>`).join('')||'<div class="empty">No questions generated.</div>',
+ Flashcards:()=>{const c=d.flashcards[S.fc];setTimeout(()=>{if(!c)return;let back=false;const f=$('#fl');f.onclick=()=>{back=!back;f.textContent=back?c.back:c.front};
+  $('#pv').onclick=()=>{S.fc=(S.fc-1+d.flashcards.length)%d.flashcards.length;lectureView(m)};$('#nx').onclick=()=>{S.fc=(S.fc+1)%d.flashcards.length;lectureView(m)};
+  $('#sh').onclick=()=>{d.flashcards.sort(()=>Math.random()-.5);S.fc=0;V.Flashcards();lectureView(m)}});
+  return c?`<div class="card flash" id="fl" tabindex=0 role="button" aria-label="Flip card">${esc(c.front)}</div><p class="ui">Card ${S.fc+1} of ${d.flashcards.length} · click to flip</p><button class="alt" id="pv">Previous</button> <button class="alt" id="nx">Next</button> <button class="alt" id="sh">Shuffle</button>`:'<div class="empty">No flashcards generated.</div>'},
+ Analytics:()=>{const s=a.stats||{},mx=Math.max(...d.topics.map(t=>t.importance_score),.01);return `<div class="grid"><div class="card stat"><b>${mmss(l.duration)}</b><span>Duration</span></div><div class="card stat"><b>${s.words}</b><span>Words</span></div><div class="card stat"><b>${s.wpm??'–'}</b><span>Words / min</span></div><div class="card stat"><b>${d.topics.length}</b><span>Topics</span></div><div class="card stat"><b>${d.questions.length}</b><span>Questions</span></div></div><div class="card"><h3>Topic distribution</h3>${d.topics.map(t=>`<p class="ui">${esc(t.topic_name)}<span class="bar"><i style="width:${t.importance_score/mx*100}%"></i></span></p>`).join('')}</div>`}};
+ tb.innerHTML=V[S.tab]()}
+render();
+</script></body></html>
